@@ -1,0 +1,144 @@
+<PASTE_YOUR_FULL_HTML_DASHBOARD_CODE_HERE><!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rogue AP Dashboard</title>
+  <style>
+    body {font-family: Inter, Arial, sans-serif; max-width:900px; margin:28px auto; padding:16px}
+    header {display:flex;align-items:center;justify-content:space-between}
+    h1{font-size:20px;margin:0}
+    .card{border-radius:10px;padding:12px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,0.06)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;text-align:left;border-bottom:1px solid #eee}
+    .small{font-size:13px;color:#666}
+    button{padding:6px 10px;border-radius:8px;border:0;background:#0b5fff;color:#fff;cursor:pointer}
+    button.danger{background:#e04b4b}
+    .controls{display:flex;gap:8px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Rogue AP Dashboard</h1>
+    <div class="small">Realtime view from Firebase RTDB</div>
+  </header>
+
+  <section class="card">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+      <div>
+        <input id="filter" placeholder="Filter by SSID or BSSID" />
+        <button id="clearFilter">Clear</button>
+      </div>
+      <div class="controls">
+        <button id="refresh">Refresh</button>
+        <button id="deleteAll" class="danger">Delete all</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="list" class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>SSID</th><th>BSSID</th><th>RSSI</th><th>Channel</th><th>Msg</th><th>Last seen</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </section>
+
+  <div class="small">
+    Make sure to replace the Firebase config below and set RTDB rules to allow read/write for testing or use proper auth in production.
+  </div>
+
+  <script type="module">
+    // ====== CONFIG - REPLACE THESE WITH YOUR FIREBASE PROJECT VALUES ======
+    const firebaseConfig = {
+      apiKey: "AIza....",
+      authDomain: "rogue-4818e.firebaseapp.com",
+      databaseURL: "https://rogue-4818e-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "rogue-4818e",
+      storageBucket: "rogue-4818e.appspot.com",
+      messagingSenderId: "1025995417357",
+      appId: "1:1025995417357:web:83dcda11071b3054c77244"
+    };
+
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js';
+    import { getDatabase, ref, onValue, remove, get } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js';
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const roguesRef = ref(db, '/rogues');
+
+    const tbody = document.getElementById('tbody');
+    const filterInput = document.getElementById('filter');
+    const clearFilter = document.getElementById('clearFilter');
+    const refreshBtn = document.getElementById('refresh');
+    const deleteAllBtn = document.getElementById('deleteAll');
+
+    function renderRows(dataObj){
+      tbody.innerHTML = '';
+      if(!dataObj) return;
+
+      const entries = Object.entries(dataObj)
+        .filter(([bssid, obj]) => {
+          if (obj.active !== undefined) return obj.active; // active flag
+          if (obj.timestamp) {
+            const last = new Date(obj.timestamp).getTime();
+            return (Date.now() - last) < 120000; // fallback 2 min
+          }
+          return false;
+        })
+        .sort((a,b)=> (b[1]?.rssi||0)-(a[1]?.rssi||0));
+
+      const q = filterInput.value.trim().toLowerCase();
+      for(const [bssid, obj] of entries){
+        if(q && !( (obj.ssid||'').toLowerCase().includes(q) || bssid.toLowerCase().includes(q))) continue;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHtml(obj.ssid||'')}</td>
+          <td><code>${escapeHtml(bssid)}</code></td>
+          <td>${obj.rssi===null?'-':escapeHtml(String(obj.rssi))}</td>
+          <td>${obj.channel||'-'}</td>
+          <td>${escapeHtml(obj.msg||'')}</td>
+          <td>${escapeHtml(obj.timestamp||obj.last_seen||'-')}</td>
+          <td><button data-bssid="${escapeHtml(bssid)}">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      // attach delete handlers
+      tbody.querySelectorAll('button[data-bssid]').forEach(btn=>{
+        btn.onclick = ()=>{
+          const b = btn.dataset.bssid;
+          if(!confirm('Delete '+b+' ?')) return;
+          remove(ref(db, '/rogues/' + b)).then(()=>alert('Deleted '+b)).catch(e=>alert('Delete failed: '+e));
+        }
+      });
+    }
+
+    // realtime listener
+    onValue(roguesRef, snapshot=>{
+      const data = snapshot.val();
+      renderRows(data);
+    }, err=>{
+      console.error('RTDB read error', err);
+      alert('Realtime DB read error. Check rules or config in console.');
+    });
+
+    refreshBtn.onclick = async ()=>{
+      const snap = await get(roguesRef);
+      renderRows(snap.val());
+    };
+
+    clearFilter.onclick = ()=>{ filterInput.value=''; refreshBtn.click(); };
+    deleteAllBtn.onclick = async ()=>{
+      if(!confirm('Delete ALL /rogues nodes? This cannot be undone.')) return;
+      try{ await remove(roguesRef); alert('All rogues deleted'); }catch(e){ alert('Failed to delete: '+e) }
+    };
+    filterInput.oninput = ()=>{ refreshBtn.click() };
+
+    function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+  </script>
+</body>
+</html>
