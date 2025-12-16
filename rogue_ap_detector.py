@@ -11,7 +11,7 @@ ALERTS_LOG_FILE = "alerts_log.json"
 RSSI_STRONGER_THRESHOLD_DB = 10
 
 FIREBASE_KEYFILE = "firebase_key.json"
-FIREBASE_DB_URL = 'https://rogue-4818e-default-rtdb.asia-southeast1.firebasedatabase.app/'
+FIREBASE_DB_URL = 'Your Url'
 
 try:
     cred = credentials.Certificate(FIREBASE_KEYFILE)
